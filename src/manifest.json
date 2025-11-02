@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "移民局扩展 - 证件提示",
+  "version": "1.0.0",
+  "description": "在移民局网站表单页面显示全屏遮罩提示，提醒用户刷证件",
+  "permissions": [
+    "activeTab"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "action": {
+    "default_title": "移民局扩展"
+  }
+}
