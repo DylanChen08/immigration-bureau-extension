@@ -72,6 +72,7 @@ export function fillBase64ToInput(base64: string): boolean {
 
 /**
  * 将File对象设置到input元素
+ * 基于 BASE64_UPLOAD_TECHNICAL_SOLUTION.md 优化，确保照片回显和正常提交
  */
 function setFileToInput(input: HTMLInputElement, base64: string): boolean {
   try {
@@ -85,15 +86,15 @@ function setFileToInput(input: HTMLInputElement, base64: string): boolean {
       return false;
     }
     
-    // 使用DataTransfer API设置文件
+    // 使用DataTransfer API创建FileList（文档推荐的核心方案）
     const dataTransfer = new DataTransfer();
     dataTransfer.items.add(file);
     
-    // 尝试直接赋值files属性（现代浏览器支持）
+    // 直接设置files属性（核心步骤，文档中的关键方法）
     try {
       (input as any).files = dataTransfer.files;
     } catch (e) {
-      // 如果不支持，使用Object.defineProperty
+      // 如果不支持，使用Object.defineProperty作为备用方案
       try {
         Object.defineProperty(input, "files", {
           value: dataTransfer.files,
@@ -106,28 +107,25 @@ function setFileToInput(input: HTMLInputElement, base64: string): boolean {
       }
     }
     
-    // 创建一个包含files的change事件
-    const changeEvent = new Event("change", { 
-      bubbles: true, 
-      cancelable: true 
-    });
-    
-    // 为了确保Vue能接收到，创建一个FileList对象并添加到事件
-    (changeEvent as any).target = input;
-    (changeEvent as any).target.files = dataTransfer.files;
-    
-    // 触发change事件
+    // 触发标准change事件（文档推荐）
+    const changeEvent = new Event("change", { bubbles: true, cancelable: true });
     input.dispatchEvent(changeEvent);
     
-    // 也触发原生的事件处理器
-    const nativeEvent = document.createEvent("HTMLEvents");
-    nativeEvent.initEvent("change", true, true);
-    input.dispatchEvent(nativeEvent);
+    // 触发input事件确保Vue响应式系统捕获变更（文档推荐）
+    const inputEvent = new Event("input", { bubbles: true });
+    input.dispatchEvent(inputEvent);
+    
+    // 触发fileSelected自定义事件（文档推荐，某些框架可能需要）
+    const fileSelectedEvent = new CustomEvent("fileSelected", {
+      bubbles: true,
+      detail: { files: dataTransfer.files }
+    });
+    input.dispatchEvent(fileSelectedEvent);
     
     console.log("文件已设置到input，文件数量:", input.files?.length);
-    console.log("文件列表:", Array.from(input.files || []).map(f => f.name));
+    console.log("文件列表:", Array.from(input.files || []).map(f => `${f.name} (${f.size} bytes)`));
     
-    // 尝试找到el-upload组件并触发Vue更新
+    // 触发el-upload组件处理（文档建议等待DOM就绪，这里等待50ms后触发）
     setTimeout(() => {
       triggerElUpload(input);
     }, 50);
@@ -221,17 +219,17 @@ function triggerElUpload(input: HTMLInputElement): void {
       }
     }
     
-    // 触发自定义事件，确保Vue能监听到
-    const customEvent = new CustomEvent("file-selected", {
+    // 再次触发fileSelected事件（确保Vue组件能接收到）
+    const fileSelectedEvent2 = new CustomEvent("fileSelected", {
       bubbles: true,
       detail: { files: input.files }
     });
-    input.dispatchEvent(customEvent);
+    input.dispatchEvent(fileSelectedEvent2);
     
-    // 也触发DOM事件（某些Vue版本可能需要）
-    const fileInputEvent = new Event("input", { bubbles: true });
-    (fileInputEvent as any).target = input;
-    input.dispatchEvent(fileInputEvent);
+    // 触发input事件（确保Vue响应式系统更新）
+    const inputEvent2 = new Event("input", { bubbles: true });
+    (inputEvent2 as any).target = input;
+    input.dispatchEvent(inputEvent2);
     
   } catch (error) {
     console.warn("触发el-upload组件处理失败:", error);
@@ -243,36 +241,60 @@ function triggerElUpload(input: HTMLInputElement): void {
  */
 export function goToNextStep(): boolean {
   try {
-    // 查找"下一步"按钮
-    const nextButton = document.querySelector(
-      "button.el-button--primary, button[type='submit'], .el-button:contains('下一步')"
+    // 方法1: 优先查找类型为submit的按钮或primary按钮
+    let nextButton = document.querySelector(
+      "button.el-button--primary, button[type='submit']"
     ) as HTMLButtonElement;
 
+    // 方法2: 如果没有找到，查找所有按钮并检查文字内容
     if (!nextButton) {
-      // 尝试查找包含"下一步"文字的按钮
       const buttons = document.querySelectorAll("button");
       for (const button of Array.from(buttons)) {
-        if (button.textContent?.includes("下一步") || button.textContent?.includes("Next")) {
-          button.click();
-          console.log("已点击下一步按钮");
-          return true;
+        const text = button.textContent?.trim() || "";
+        if (text.includes("下一步") || text.includes("Next") || text === "下一步") {
+          nextButton = button as HTMLButtonElement;
+          console.log("通过文字内容找到下一步按钮:", text);
+          break;
         }
       }
-      
-      console.warn("未找到下一步按钮，尝试触发表单提交");
-      // 尝试触发表单提交
-      const form = document.querySelector("form");
-      if (form) {
-        form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-        return true;
+    }
+    
+    // 方法3: 如果还是没找到，尝试查找el-button类中的按钮
+    if (!nextButton) {
+      const elButtons = document.querySelectorAll("button.el-button");
+      for (const button of Array.from(elButtons)) {
+        const text = button.textContent?.trim() || "";
+        if (text.includes("下一步") || text.includes("Next")) {
+          nextButton = button as HTMLButtonElement;
+          console.log("在el-button中找到下一步按钮:", text);
+          break;
+        }
       }
-      
-      return false;
     }
 
-    nextButton.click();
-    console.log("已点击下一步按钮");
-    return true;
+    if (nextButton) {
+      // 确保按钮可见和可点击
+      if (nextButton.offsetParent !== null || nextButton.style.display !== "none") {
+        nextButton.click();
+        console.log("已点击下一步按钮");
+        return true;
+      } else {
+        console.warn("下一步按钮存在但不可见");
+      }
+    }
+    
+    // 方法4: 尝试触发表单提交
+    console.warn("未找到下一步按钮，尝试触发表单提交");
+    const form = document.querySelector("form");
+    if (form) {
+      const submitEvent = new Event("submit", { bubbles: true, cancelable: true });
+      form.dispatchEvent(submitEvent);
+      console.log("已触发表单提交事件");
+      return true;
+    }
+    
+    console.error("未找到任何可用的提交方式");
+    return false;
   } catch (error) {
     console.error("跳转下一步失败:", error);
     return false;
