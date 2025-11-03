@@ -1,7 +1,9 @@
 // 遮罩层管理模块
 
-import { initWebSocket, closeWebSocket, sendDocumentSignal } from "./websocketClient";
+import { initWebSocket, closeWebSocket, sendFinalResultData } from "./websocketClient";
 import { fillBase64ToInput, goToNextStep, redirectToTimeoutPage } from "./formHandler";
+import { extractFormData } from "./formDataExtractor";
+import { WS_URL_STEP2_SEND, WS_URL_STEP2_RECEIVE } from "./config";
 
 const INPUT_SELECTOR = "#app > div > div.main > div > div.form-content > form > div:nth-child(2) > div > div:nth-child(1) > div > input";
 
@@ -141,33 +143,8 @@ function startCountdownAndWebSocket(wsUrl: string | null = null, mode: OverlayMo
       console.log("WebSocket连接成功，等待base64数据...");
     });
   } else if (mode === "step2") {
-    // step2: 发送文档信号并监听领取完成信号
-    if (wsUrl) {
-      // 有WebSocket URL，正常连接
-      initWebSocket(wsUrl, (message) => {
-        // step2接收到消息表示凭条已领取
-        try {
-          const data = typeof message === "string" ? JSON.parse(message) : message;
-          if (data.type === "document_received" || data.type === "complete" || message === "complete") {
-            handleStep2Complete();
-          }
-        } catch {
-          // 如果不是JSON，也认为完成了
-          handleStep2Complete();
-        }
-      }, () => {
-        console.log("WebSocket连接成功，发送文档信号...");
-        // 连接成功后立即发送文档信号
-        sendDocumentSignal();
-      });
-    } else {
-      // 没有WebSocket URL，直接发送信号（可能会失败，但不影响流程）
-      console.log("模拟模式：发送文档信号（已获取相关信息）");
-      // 尝试发送信号（如果之前有WebSocket连接）
-      sendDocumentSignal();
-      // 注意：在模拟模式下，需要手动检测凭条是否已领取
-      // 这里可以添加DOM监听或其他检测机制
-    }
+    // 最后阶段：发送表单数据并监听领取状态
+    handleFinalStage();
   }
 }
 
@@ -196,15 +173,153 @@ function handleTimeout(mode: OverlayMode = "step1"): void {
 }
 
 /**
- * 处理step2的完成（凭条已领取）
+ * 处理最后阶段（凭条领取）
+ * 1. 提取表单数据（包括二维码）
+ * 2. 连接到 setFinalResultApi 发送数据
+ * 3. 连接到 keepReceiptApi 监听领取状态
  */
-function handleStep2Complete(): void {
+async function handleFinalStage(): Promise<void> {
+  console.log("开始最后阶段：提取表单数据并发送...");
+  
+  // 提取表单数据（包括name, age, dep等）
+  const formData = extractFormData();
+  
+  if (!formData) {
+    console.error("提取表单数据失败，无法继续");
+    return;
+  }
+  
+  // 确保二维码已加载（如果是异步加载）
+  let qrcodeBase64: string | null = null;
+  const qrCodeResult = extractQrCodeBase64Sync();
+  if (qrCodeResult && qrCodeResult instanceof Promise) {
+    console.log("等待二维码异步加载...");
+    qrcodeBase64 = await qrCodeResult;
+  } else if (qrCodeResult) {
+    qrcodeBase64 = qrCodeResult;
+  }
+  
+  // 更新二维码数据
+  if (qrcodeBase64) {
+    formData.qrcode = qrcodeBase64;
+    console.log("二维码已加载，base64长度:", qrcodeBase64.length);
+  } else {
+    console.warn("未能提取二维码，将发送不含二维码的数据");
+  }
+  
+  // 步骤1: 连接到 setFinalResultApi 发送表单数据
+  initWebSocket(WS_URL_STEP2_SEND, () => {
+    // 消息回调不会被调用（我们只发送数据）
+  }, () => {
+    console.log("已连接到 setFinalResultApi，发送表单数据...");
+    // 连接成功后立即发送表单数据
+    sendFinalResultData(formData);
+    
+    // 发送完成后关闭连接
+    setTimeout(() => {
+      closeWebSocket();
+      console.log("表单数据已发送，开始监听领取状态...");
+      
+      // 步骤2: 连接到 keepReceiptApi 监听领取状态
+      initWebSocket(WS_URL_STEP2_RECEIVE, (message) => {
+        // 解析领取状态消息
+        try {
+          const data = typeof message === "string" ? JSON.parse(message) : message;
+          console.log("收到领取状态消息:", data);
+          
+          // 检查 isKeep 字段
+          if (data.isKeep === 1) {
+            console.log("凭条已取走，完成最后阶段");
+            handleFinalStageComplete();
+          } else if (data.isKeep === 0) {
+            console.log("凭条尚未取走，继续等待...");
+            // 继续等待，不执行任何操作
+          } else {
+            console.warn("未识别的领取状态:", data);
+          }
+        } catch (error) {
+          console.error("解析领取状态消息失败:", error);
+        }
+      }, () => {
+        console.log("已连接到 keepReceiptApi，等待领取状态...");
+      });
+    }, 500); // 等待500ms确保数据已发送
+  });
+}
+
+/**
+ * 同步提取二维码（内部函数，避免循环依赖）
+ */
+function extractQrCodeBase64Sync(): string | null | Promise<string | null> {
+  try {
+    const qrCodeElement = document.querySelector("#app > div > div.main > div > div.info-content > ul > li.line-qr-code > div");
+    if (!qrCodeElement) return null;
+    
+    let imgElement = qrCodeElement.querySelector("img") as HTMLImageElement;
+    if (!imgElement) {
+      const canvas = qrCodeElement.querySelector("canvas") as HTMLCanvasElement;
+      if (canvas) {
+        try {
+          return canvas.toDataURL("image/png");
+        } catch (e) {
+          console.warn("canvas转base64失败:", e);
+        }
+      }
+      const svg = qrCodeElement.querySelector("svg");
+      if (svg) {
+        try {
+          const svgData = new XMLSerializer().serializeToString(svg);
+          return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+        } catch (e) {
+          console.warn("SVG转base64失败:", e);
+        }
+      }
+      return null;
+    }
+    
+    if (imgElement.src.startsWith("data:image")) {
+      return imgElement.src;
+    }
+    
+    // 异步加载URL图片
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL("image/png"));
+          } else {
+            resolve(null);
+          }
+        } catch (e) {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = imgElement.src;
+    });
+  } catch (error) {
+    console.error("提取二维码失败:", error);
+    return null;
+  }
+}
+
+/**
+ * 处理最后阶段完成（凭条已领取）
+ */
+function handleFinalStageComplete(): void {
   if (isProcessing) {
     return;
   }
   
   isProcessing = true;
-  console.log("凭条已领取，提前完成");
+  console.log("凭条已领取，完成最后阶段");
   
   // 停止倒计时
   stopCountdown();
@@ -215,9 +330,9 @@ function handleStep2Complete(): void {
   // 隐藏遮罩层
   hideOverlay();
   
-  // step2完成后可能需要跳转，但用户没有指定跳转地址
-  // 保持当前页面或可以添加跳转逻辑
-  console.log("step2完成，保持当前页面");
+  // 跳转到完成页面
+  redirectToTimeoutPage();
+  
   isProcessing = false;
 }
 

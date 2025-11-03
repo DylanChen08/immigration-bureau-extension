@@ -196,7 +196,6 @@ function triggerElUpload(input: HTMLInputElement): void {
       
       // Vue 2 Options API 或 Vue 3 Options API
       if (vueInstance.$) {
-        const props = vueInstance.$.props || vueInstance.$.attrs;
         const onFileChange = vueInstance.$?.props?.onChange || 
                             vueInstance.$?.attrs?.onChange ||
                             vueInstance.handleFileChange ||

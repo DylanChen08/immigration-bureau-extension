@@ -2,6 +2,7 @@
 
 import { showOverlay, hideOverlay } from "./overlay";
 import { isTargetPage, isPageLoaded, isFirstStepActive, hasStepsContainer, waitForCondition, isSuccessPage } from "./pageState";
+import { WS_URL } from "./config";
 
 /**
  * 检查成功页面并显示遮罩层（step2）
@@ -45,7 +46,7 @@ function checkAndShowSuccessOverlay(): void {
       qrCodeParent.style.display = "none";
     }
     
-    // 显示step2遮罩层
+    // 显示最后阶段遮罩层（不使用URL，在handleFinalStage中处理）
     showOverlay(null, "step2");
   }, 1000);
 }
@@ -87,7 +88,8 @@ export function checkAndShowOverlay(): void {
 
     // 检查是否是第一步
     if (isFirstStepActive()) {
-      showOverlay(null, "step1");
+      // step1: 使用真实的 WebSocket 接口连接到本地 60001 端口
+      showOverlay(WS_URL, "step1");
     } else {
       hideOverlay();
     }
