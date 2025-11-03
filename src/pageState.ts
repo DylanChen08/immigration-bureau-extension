@@ -1,11 +1,25 @@
 // 页面状态检查模块
 
 /**
- * 检查是否是目标页面
+ * 检查是否是目标页面（表单页面）
  */
 export function isTargetPage(): boolean {
   const currentUrl = window.location.href;
   return currentUrl.includes("entry-registation-form");
+}
+
+/**
+ * 检查是否是成功页面（凭条打印页面）
+ */
+export function isSuccessPage(): boolean {
+  const currentUrl = window.location.href;
+  if (currentUrl.includes("entry-registation-success")) {
+    return true;
+  }
+  
+  // 检查二维码元素是否存在
+  const qrCodeElement = document.querySelector("#app > div > div.main > div > div.info-content > ul > li.line-qr-code > div");
+  return qrCodeElement !== null;
 }
 
 /**

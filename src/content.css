@@ -19,12 +19,12 @@
 }
 
 .overlay-content {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 30px;
-  text-align: center;
 }
 
 .overlay-text {
@@ -47,25 +47,34 @@
   }
 }
 
+@keyframes pulseRed {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
 .overlay-gif-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
   display: flex;
   justify-content: center;
   align-items: center;
-  width: 400px;
-  height: 400px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 20px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(10px);
+  overflow: hidden;
 }
 
 .overlay-gif {
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  border-radius: 10px;
+  width: 100vw;
+  height: 100vh;
+  object-fit: contain;
+  object-position: center;
   animation: scaleIn 0.5s ease-out;
 }
 
@@ -80,14 +89,34 @@
   }
 }
 
+/* 倒计时样式 */
+.overlay-countdown {
+  position: absolute;
+  top: 40px;
+  right: 40px;
+  font-size: 48px;
+  font-weight: bold;
+  color: #ffffff;
+  text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.8);
+  font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 20px 30px;
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  animation: fadeIn 0.5s ease-in-out;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .overlay-text {
     font-size: 36px;
   }
   
-  .overlay-gif-container {
-    width: 300px;
-    height: 300px;
+  .overlay-countdown {
+    font-size: 36px;
+    top: 20px;
+    right: 20px;
+    padding: 15px 20px;
   }
 }
